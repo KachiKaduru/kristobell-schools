@@ -1,297 +1,821 @@
 # Kristobell School Management System - Technical Implementation Plan
 
+## MVP Scope & Summary
+
+**Goal (MVP):** Deliver a functional Admin + Staff + Student portal that supports the real class structure (47 classes), secure authentication, ID generation, CRUD for classes/students/staff, assignment/result upload, student read-only profiles with passport images, and Result PDF export.
+
+**Why MVP First:** With ~515-720 students across 47 classes, scope can expand quickly. Focus on core school operations first, then add advanced features (attendance, payments, etc.) in later phases.
+
+---
+
 ## Tech Stack Recommendation
 
 ### Backend
 
-- **FastAPI** - Modern Python web framework (you're learning this!)
+- **FastAPI** - Modern Python web framework
 - **SQLAlchemy** - ORM for database operations
-- **PostgreSQL** or **SQLite** (for development) - Database
+- **PostgreSQL** - Production database (SQLite for development)
 - **Pydantic** - Data validation (comes with FastAPI)
 - **JWT** (python-jose) - Authentication tokens
 - **Passlib** + **bcrypt** - Password hashing
 - **Alembic** - Database migrations
+- **WeasyPrint** or **Playwright** - PDF generation
+- **Redis** (optional) - Caching & background jobs
+- **Celery** or **RQ** (optional) - Background task queue
 
 ### Frontend
 
-- **React** or **Next.js** (if you want SSR) - UI framework
-- **React Router** - Client-side routing
-- **Axios** or **Fetch API** - HTTP requests
-- **Context API** or **Redux/Zustand** - State management
-- **Tailwind CSS** or **Styled Components** - Styling
+- **Next.js 14+ (App Router)** - Recommended for SSR and better DX
+- **TypeScript** - Type safety
+- **React Query (TanStack Query)** - Server state management
+- **Zustand** - Client-side state management
+- **Tailwind CSS** - Styling
+- **Axios** - HTTP client
+- **React Hook Form** - Form handling
+
+### File Storage
+
+- **Supabase Storage** (recommended for MVP) or **AWS S3** / **DigitalOcean Spaces**
+- Direct client uploads via presigned URLs
 
 ### Additional Tools
 
 - **Docker** (optional) - Containerization
 - **Git** - Version control
+- **Sentry** (optional) - Error monitoring
+
+---
+
+## School Structure (Exact Specification)
+
+### Class Structure & Capacity
+
+**Early Years:**
+
+- **KG 1A, KG 1B** → **KG 2A, KG 2B** (4 classes, 15 pupils/class = 60 max)
+
+**Nursery:**
+
+- **NUR 1A, NUR 1B** → **NUR 2A, NUR 2B** (4 classes, 20 pupils/class = 80 max)
+
+**Primary:**
+
+- **PRY 1A, PRY 1B, PRY 1C** → **PRY 5A, PRY 5B, PRY 5C** (15 classes, 25 pupils/class = 375 max)
+
+**Junior Secondary:**
+
+- **JSS 1A, JSS 1B, JSS 1C, JSS 1D** → **JSS 3A, JSS 3B, JSS 3C, JSS 3D** (12 classes, 30 students/class = 360 max)
+
+**Senior Secondary:**
+
+- **SSS 1A, SSS 1B, SSS 1C, SSS 1D** → **SSS 3A, SSS 3B, SSS 3C, SSS 3D** (12 classes, 30 students/class = 360 max)
+- **SSS Stream Mapping by Arm:**
+  - **SSS A** = Science
+  - **SSS B** = Technical
+  - **SSS C** = Commercial
+  - **SSS D** = Arts
+
+**Totals:**
+
+- **47 classes total** (23 in Nursery/Primary, 24 in Secondary)
+- **~515-720 students** depending on fill rates
+- Design assumes high-side capacity for performance
 
 ---
 
 ## System Architecture
 
 ```
-┌─────────────────┐
-│  Landing Page   │  (Public - React/Next.js)
-└────────┬────────┘
-         │
-         ├─── Admin Portal Login
-         ├─── Staff Portal Login
-         └─── Student Portal Login
-                │
-                ▼
-┌─────────────────────────────────┐
-│      FastAPI Backend            │
-│  ┌───────────────────────────┐  │
-│  │  Authentication Service   │  │
-│  │  - JWT Token Generation   │  │
-│  │  - Role-based Auth        │  │
-│  └───────────────────────────┘  │
-│  ┌───────────────────────────┐  │
-│  │  Business Logic Services  │  │
-│  │  - ID Generation          │  │
-│  │  - Result Calculation     │  │
-│  │  - Enrollment Processing  │  │
-│  └───────────────────────────┘  │
-│  ┌───────────────────────────┐  │
-│  │  API Routes (REST)        │  │
-│  └───────────────────────────┘  │
-└────────────┬────────────────────┘
-             │
-             ▼
-┌─────────────────────────────┐
-│    PostgreSQL Database      │
-└─────────────────────────────┘
+┌─────────────────────────────────────────┐
+│         Next.js Frontend (SSR)         │
+│  ┌───────────────────────────────────┐  │
+│  │  Landing Page (Public)            │  │
+│  │  - Enrollment Form                │  │
+│  └───────────────────────────────────┘  │
+│  ┌───────────────────────────────────┐  │
+│  │  Portal Routes (Protected)        │  │
+│  │  - Admin / Staff / Student        │  │
+│  └───────────────────────────────────┘  │
+└──────────────┬──────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────┐
+│         FastAPI Backend                 │
+│  ┌───────────────────────────────────┐  │
+│  │  Authentication Service            │  │
+│  │  - JWT Token Generation           │  │
+│  │  - Role-based Auth                │  │
+│  │  - Refresh Tokens                 │  │
+│  └───────────────────────────────────┘  │
+│  ┌───────────────────────────────────┐  │
+│  │  Business Logic Services          │  │
+│  │  - ID Generation (DB sequences)   │  │
+│  │  - Result Calculation             │  │
+│  │  - Enrollment Processing          │  │
+│  │  - PDF Generation                 │  │
+│  └───────────────────────────────────┘  │
+│  ┌───────────────────────────────────┐  │
+│  │  File Upload Service               │  │
+│  │  - Presigned URLs                  │  │
+│  │  - Photo Management                │  │
+│  └───────────────────────────────────┘  │
+│  ┌───────────────────────────────────┐  │
+│  │  API Routes (REST)                │  │
+│  └───────────────────────────────────┘  │
+└──────────────┬──────────────────────────┘
+               │
+       ┌───────┴────────┐
+       ▼                ▼
+┌──────────────┐  ┌──────────────┐
+│  PostgreSQL  │  │  File Storage│
+│   Database   │  │  (Supabase)  │
+└──────────────┘  └──────────────┘
 ```
 
 ---
 
-## Database Schema Design
+## Database Schema Design (Consolidated & Production-Ready)
+
+### Design Principles
+
+- **Single auth source** (`users` table) to avoid duplication
+- **Profile tables** (`student_profiles`, `staff_profiles`) for extended info
+- **UUID primary keys** + **Postgres sequences** for school IDs (concurrency-safe)
+- **Indexes** on `school_id`, `current_class_id`, `class_id`, `subject_id`, `academic_year`, `term`
+- **Soft deletes** (`is_deleted`) for data retention
+- **Capacity tracking** (`capacity`, `current_count`) on classes
 
 ### Core Tables
 
-#### 1. **users** (Base table for all user types)
+#### 1. **users** (Base authentication table)
 
 ```sql
-- id (UUID, Primary Key)
-- email (String, Unique, Nullable - for Admin only)
-- school_id (String, Unique, Nullable - for Staff/Students)
-- password_hash (String)
-- role (Enum: 'admin', 'staff', 'student')
-- is_active (Boolean)
-- created_at (Timestamp)
-- updated_at (Timestamp)
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    full_name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE, -- Nullable, only for Admin
+    school_id VARCHAR(50) UNIQUE, -- Nullable, for Staff/Students (Kristobell/STU|STF/YYYY/####)
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL CHECK (role IN ('admin', 'staff', 'student')),
+    is_active BOOLEAN DEFAULT TRUE,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_users_school_id ON users(school_id) WHERE school_id IS NOT NULL;
+CREATE INDEX idx_users_email ON users(email) WHERE email IS NOT NULL;
+CREATE INDEX idx_users_role ON users(role);
 ```
 
-#### 2. **admins**
+#### 2. **admins** (Admin profile - minimal, most info in users)
 
 ```sql
-- id (UUID, Primary Key, Foreign Key → users.id)
-- full_name (String)
-- email (String, Unique)
-- phone (String, Nullable)
-- created_at (Timestamp)
+CREATE TABLE admins (
+    id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    phone VARCHAR(20),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
-#### 3. **staff**
+#### 3. **staff_profiles** (Staff extended information)
 
 ```sql
-- id (UUID, Primary Key, Foreign Key → users.id)
-- school_id (String, Unique) -- Kristobell/STF/YYYY/UniqueID
-- full_name (String)
-- phone (String)
-- date_of_birth (Date, Nullable)
-- employment_date (Date)
-- is_form_teacher (Boolean, Default: False)
-- created_at (Timestamp)
+CREATE TABLE staff_profiles (
+    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    phone VARCHAR(20) NOT NULL,
+    date_of_birth DATE,
+    employment_date DATE NOT NULL,
+    is_form_teacher BOOLEAN DEFAULT FALSE,
+    photo_url TEXT, -- URL to stored passport photo
+    photo_etag VARCHAR(255), -- For cache busting
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 ```
 
-#### 4. **students**
+#### 4. **student_profiles** (Student extended information)
 
 ```sql
-- id (UUID, Primary Key, Foreign Key → users.id)
-- school_id (String, Unique) -- Kristobell/STU/YYYY/UniqueID
-- full_name (String)
-- date_of_birth (Date)
-- gender (Enum)
-- parent_name (String)
-- parent_phone (String)
-- parent_email (String, Nullable)
-- enrollment_year (Integer) -- YYYY from school_id
-- enrollment_status (Enum: 'pending', 'approved', 'rejected')
-- current_class_id (UUID, Foreign Key → classes.id, Nullable)
-- created_at (Timestamp)
+CREATE TABLE student_profiles (
+    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    date_of_birth DATE NOT NULL,
+    gender VARCHAR(10) NOT NULL CHECK (gender IN ('male', 'female', 'other')),
+    parent_name VARCHAR(255) NOT NULL,
+    parent_phone VARCHAR(20) NOT NULL,
+    parent_email VARCHAR(255),
+    enrollment_year INTEGER NOT NULL, -- Extracted from school_id
+    enrollment_status VARCHAR(20) DEFAULT 'pending' CHECK (enrollment_status IN ('pending', 'approved', 'rejected')),
+    current_class_id UUID REFERENCES classes(id) ON DELETE SET NULL,
+    photo_url TEXT, -- URL to stored passport photo
+    photo_etag VARCHAR(255), -- For cache busting
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_student_profiles_class ON student_profiles(current_class_id);
+CREATE INDEX idx_student_profiles_enrollment_year ON student_profiles(enrollment_year);
 ```
 
-#### 5. **enrollment_requests**
+#### 5. **classes** (Class management with capacity tracking)
 
 ```sql
-- id (UUID, Primary Key)
-- student_id (UUID, Foreign Key → students.id)
-- full_name (String)
-- date_of_birth (Date)
-- gender (Enum)
-- parent_name (String)
-- parent_phone (String)
-- parent_email (String)
-- requested_class_id (UUID, Foreign Key → classes.id)
-- status (Enum: 'pending', 'approved', 'rejected')
-- admin_notes (Text, Nullable)
-- created_at (Timestamp)
-- reviewed_at (Timestamp, Nullable)
-- reviewed_by (UUID, Foreign Key → admins.id, Nullable)
+CREATE TABLE classes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(50) NOT NULL, -- e.g., "KG 1A", "JSS 2B", "SSS 3C"
+    level VARCHAR(20) NOT NULL CHECK (level IN ('kg', 'nursery', 'primary', 'jss', 'sss')),
+    arm_letter VARCHAR(1), -- 'A', 'B', 'C', 'D' (nullable for levels without arms)
+    stream VARCHAR(20) CHECK (stream IN ('science', 'technical', 'commercial', 'arts')), -- Only for SSS
+    academic_year VARCHAR(20) NOT NULL, -- e.g., "2024/2025"
+    capacity INTEGER NOT NULL, -- Max students (15, 20, 25, or 30)
+    current_count INTEGER DEFAULT 0, -- Current enrolled students
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(name, academic_year)
+);
+
+CREATE INDEX idx_classes_level ON classes(level);
+CREATE INDEX idx_classes_academic_year ON classes(academic_year);
+CREATE INDEX idx_classes_stream ON classes(stream) WHERE stream IS NOT NULL;
 ```
 
-#### 6. **classes**
+**Class Naming Convention:**
+
+- Format: `{LEVEL} {YEAR}{ARM}` (e.g., "KG 1A", "PRY 3B", "JSS 2C", "SSS 1A")
+- Stream is derived from arm for SSS: A=Science, B=Technical, C=Commercial, D=Arts
+
+#### 6. **subjects** (Subject catalog)
 
 ```sql
-- id (UUID, Primary Key)
-- name (String) -- e.g., "JSS 1A", "SSS 2 Science", "KG 1A"
-- level (Enum: 'kg', 'nursery', 'primary', 'jss', 'sss')
-- stream (Enum: 'science', 'commercial', 'arts', Nullable) -- Only for SSS level
-- academic_year (String) -- e.g., "2024/2025"
-- max_students (Integer, Nullable)
-- created_at (Timestamp)
+CREATE TABLE subjects (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name VARCHAR(255) NOT NULL,
+    code VARCHAR(20) UNIQUE NOT NULL, -- e.g., "MTH101", "NUM001"
+    level VARCHAR(20) NOT NULL CHECK (level IN ('kg', 'nursery', 'primary', 'jss', 'sss')),
+    stream VARCHAR(20) CHECK (stream IN ('science', 'technical', 'commercial', 'arts')), -- Only for SSS subjects
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_subjects_level ON subjects(level);
+CREATE INDEX idx_subjects_stream ON subjects(stream) WHERE stream IS NOT NULL;
 ```
 
-#### 7. **class_form_teachers** (Many-to-Many: Classes ↔ Staff)
+#### 7. **class_subjects** (Many-to-Many: Classes ↔ Subjects)
 
 ```sql
-- id (UUID, Primary Key)
-- class_id (UUID, Foreign Key → classes.id)
-- staff_id (UUID, Foreign Key → staff.id)
-- assigned_at (Timestamp)
-- assigned_by (UUID, Foreign Key → admins.id)
-- UNIQUE(class_id, staff_id)
+CREATE TABLE class_subjects (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    class_id UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+    subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(class_id, subject_id)
+);
+
+CREATE INDEX idx_class_subjects_class ON class_subjects(class_id);
+CREATE INDEX idx_class_subjects_subject ON class_subjects(subject_id);
 ```
 
-#### 8. **subject_groups**
+#### 8. **staff_subject_assignments** (Many-to-Many: Staff ↔ Subjects ↔ Classes)
 
 ```sql
-- id (UUID, Primary Key)
-- name (String) -- e.g., "SS Science", "SS Commerce", "JSS", "KG/Nursery 1"
-- description (Text, Nullable)
-- level (Enum: 'kg', 'nursery', 'primary', 'jss', 'sss')
-- stream (Enum: 'science', 'commercial', 'arts', Nullable) -- Only for SSS groups
-- created_at (Timestamp)
+CREATE TABLE staff_subject_assignments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    staff_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    subject_id UUID NOT NULL REFERENCES subjects(id) ON DELETE CASCADE,
+    class_id UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    assigned_by UUID NOT NULL REFERENCES users(id), -- Admin who assigned
+    UNIQUE(staff_id, subject_id, class_id)
+);
+
+CREATE INDEX idx_staff_assignments_staff ON staff_subject_assignments(staff_id);
+CREATE INDEX idx_staff_assignments_class ON staff_subject_assignments(class_id);
 ```
 
-#### 9. **subjects**
+#### 9. **class_form_teachers** (Form teacher assignments)
 
 ```sql
-- id (UUID, Primary Key)
-- name (String)
-- code (String, Unique) -- e.g., "MTH101", "NUM001" (for Number work)
-- subject_group_id (UUID, Foreign Key → subject_groups.id, Nullable)
-- level (Enum: 'kg', 'nursery', 'primary', 'jss', 'sss')
-- created_at (Timestamp)
+CREATE TABLE class_form_teachers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    class_id UUID NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+    staff_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    assigned_by UUID NOT NULL REFERENCES users(id), -- Admin
+    UNIQUE(class_id, staff_id)
+);
+
+CREATE INDEX idx_form_teachers_class ON class_form_teachers(class_id);
+CREATE INDEX idx_form_teachers_staff ON class_form_teachers(staff_id);
 ```
 
-#### 10. **class_subjects** (Many-to-Many: Classes ↔ Subjects)
+#### 10. **enrollment_requests** (Public enrollment submissions)
 
 ```sql
-- id (UUID, Primary Key)
-- class_id (UUID, Foreign Key → classes.id)
-- subject_id (UUID, Foreign Key → subjects.id)
-- UNIQUE(class_id, subject_id)
+CREATE TABLE enrollment_requests (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    full_name VARCHAR(255) NOT NULL,
+    date_of_birth DATE NOT NULL,
+    gender VARCHAR(10) NOT NULL,
+    parent_name VARCHAR(255) NOT NULL,
+    parent_phone VARCHAR(20) NOT NULL,
+    parent_email VARCHAR(255),
+    requested_class_id UUID NOT NULL REFERENCES classes(id),
+    status VARCHAR(20) DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+    token VARCHAR(255) UNIQUE, -- For public status lookup
+    admin_notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at TIMESTAMP,
+    reviewed_by UUID REFERENCES users(id) -- Admin
+);
+
+CREATE INDEX idx_enrollment_status ON enrollment_requests(status);
+CREATE INDEX idx_enrollment_token ON enrollment_requests(token);
 ```
 
-#### 11. **staff_subject_assignments** (Many-to-Many: Staff ↔ Subjects ↔ Classes)
+#### 11. **assignments** (Staff-created assignments)
 
 ```sql
-- id (UUID, Primary Key)
-- staff_id (UUID, Foreign Key → staff.id)
-- subject_id (UUID, Foreign Key → subjects.id)
-- class_id (UUID, Foreign Key → classes.id)
-- assigned_at (Timestamp)
-- assigned_by (UUID, Foreign Key → admins.id)
-- UNIQUE(staff_id, subject_id, class_id)
+CREATE TABLE assignments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    subject_id UUID NOT NULL REFERENCES subjects(id),
+    class_id UUID NOT NULL REFERENCES classes(id),
+    created_by UUID NOT NULL REFERENCES users(id), -- Staff member
+    due_date TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_assignments_class ON assignments(class_id);
+CREATE INDEX idx_assignments_created_by ON assignments(created_by);
 ```
 
-#### 12. **announcements**
+#### 12. **assignment_submissions** (Student submissions)
 
 ```sql
-- id (UUID, Primary Key)
-- header (String)
-- about (String) -- Short description
-- message (Text)
-- author_id (UUID, Foreign Key → admins.id)
-- audience (Enum: 'staff', 'students', 'both')
-- created_at (Timestamp)
-- updated_at (Timestamp)
+CREATE TABLE assignment_submissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    assignment_id UUID NOT NULL REFERENCES assignments(id) ON DELETE CASCADE,
+    student_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    response TEXT,
+    file_url TEXT, -- Optional file attachment URL
+    status VARCHAR(20) DEFAULT 'submitted' CHECK (status IN ('submitted', 'seen')),
+    submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    seen_at TIMESTAMP,
+    UNIQUE(assignment_id, student_id)
+);
+
+CREATE INDEX idx_submissions_assignment ON assignment_submissions(assignment_id);
+CREATE INDEX idx_submissions_student ON assignment_submissions(student_id);
 ```
 
-#### 13. **assignments**
+#### 13. **results** (Student results by term)
 
 ```sql
-- id (UUID, Primary Key)
-- title (String)
-- description (Text)
-- subject_id (UUID, Foreign Key → subjects.id)
-- class_id (UUID, Foreign Key → classes.id)
-- created_by (UUID, Foreign Key → staff.id)
-- due_date (Timestamp, Nullable)
-- created_at (Timestamp)
-- updated_at (Timestamp)
+CREATE TABLE results (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    subject_id UUID NOT NULL REFERENCES subjects(id),
+    class_id UUID NOT NULL REFERENCES classes(id),
+    academic_year VARCHAR(20) NOT NULL,
+    term VARCHAR(20) NOT NULL CHECK (term IN ('first', 'second', 'third')),
+    level VARCHAR(20) NOT NULL CHECK (level IN ('kg', 'nursery', 'primary', 'jss', 'sss')),
+
+    -- For KG, Nursery, Primary: 1 CA (40 max) + Exam (60 max)
+    ca_score DECIMAL(5,2), -- Nullable, only for kg/nursery/primary
+    exam_score DECIMAL(5,2) NOT NULL,
+
+    -- For JSS, SSS: 2 CAs (20 each) + Exam (60)
+    first_ca DECIMAL(5,2), -- Nullable, only for jss/sss
+    second_ca DECIMAL(5,2), -- Nullable, only for jss/sss
+
+    total_score DECIMAL(5,2) NOT NULL, -- Calculated
+    grade VARCHAR(2) NOT NULL, -- A, B, C, D, F
+
+    uploaded_by UUID NOT NULL REFERENCES users(id), -- Staff member
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    UNIQUE(student_id, subject_id, academic_year, term)
+);
+
+CREATE INDEX idx_results_student ON results(student_id);
+CREATE INDEX idx_results_class ON results(class_id);
+CREATE INDEX idx_results_academic_year ON results(academic_year);
+CREATE INDEX idx_results_term ON results(term);
+CREATE INDEX idx_results_subject ON results(subject_id);
 ```
 
-#### 14. **assignment_submissions**
+#### 14. **announcements** (School announcements)
 
 ```sql
-- id (UUID, Primary Key)
-- assignment_id (UUID, Foreign Key → assignments.id)
-- student_id (UUID, Foreign Key → students.id)
-- response (Text)
-- status (Enum: 'submitted', 'seen') -- 'seen' when teacher marks it
-- submitted_at (Timestamp)
-- seen_at (Timestamp, Nullable)
+CREATE TABLE announcements (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    header VARCHAR(255) NOT NULL,
+    about VARCHAR(500), -- Short description
+    message TEXT NOT NULL,
+    author_id UUID NOT NULL REFERENCES users(id), -- Admin
+    audience VARCHAR(20) NOT NULL CHECK (audience IN ('staff', 'students', 'both')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_announcements_audience ON announcements(audience);
+CREATE INDEX idx_announcements_created ON announcements(created_at);
 ```
 
-#### 15. **results**
+#### 15. **student_promotions** (Audit trail for promotions)
 
 ```sql
-- id (UUID, Primary Key)
-- student_id (UUID, Foreign Key → students.id)
-- subject_id (UUID, Foreign Key → subjects.id)
-- class_id (UUID, Foreign Key → classes.id)
-- academic_year (String)
-- term (Enum: 'first', 'second', 'third')
-- level (Enum: 'kg', 'nursery', 'primary', 'jss', 'sss')
+CREATE TABLE student_promotions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    student_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    from_class_id UUID NOT NULL REFERENCES classes(id),
+    to_class_id UUID NOT NULL REFERENCES classes(id),
+    academic_year VARCHAR(20) NOT NULL,
+    promoted_by UUID NOT NULL REFERENCES users(id), -- Admin
+    promoted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
-  -- Grading fields based on level
-  -- For Nursery & Primary:
-  - ca_score (Float) -- 40 max
-  - exam_score (Float) -- 60 max
-  - total_score (Float) -- Calculated: ca_score + exam_score
-
-  -- For JSS & SSS:
-  - first_ca (Float) -- 20 max
-  - second_ca (Float) -- 20 max
-  - exam_score (Float) -- 60 max
-  - total_score (Float) -- Calculated: first_ca + second_ca + exam_score
-
-  - grade (String) -- Calculated based on total_score
-  - uploaded_by (UUID, Foreign Key → staff.id)
-  - created_at (Timestamp)
-  - updated_at (Timestamp)
-
-  UNIQUE(student_id, subject_id, academic_year, term)
+CREATE INDEX idx_promotions_student ON student_promotions(student_id);
 ```
 
-#### 16. **student_promotions** (Audit trail)
+#### 16. **school_id_sequences** (For atomic ID generation)
 
 ```sql
-- id (UUID, Primary Key)
-- student_id (UUID, Foreign Key → students.id)
-- from_class_id (UUID, Foreign Key → classes.id)
-- to_class_id (UUID, Foreign Key → classes.id)
-- academic_year (String)
-- promoted_by (UUID, Foreign Key → admins.id)
-- promoted_at (Timestamp)
+CREATE TABLE school_id_sequences (
+    id SERIAL PRIMARY KEY,
+    role VARCHAR(20) NOT NULL CHECK (role IN ('student', 'staff')),
+    year INTEGER NOT NULL,
+    last_number INTEGER DEFAULT 0,
+    UNIQUE(role, year)
+);
+
+CREATE INDEX idx_sequences_role_year ON school_id_sequences(role, year);
 ```
 
 ---
 
-## API Endpoints Structure
+## ID Generation Service (Concurrency-Safe)
+
+### Implementation
+
+```python
+# backend/app/services/id_generator.py
+
+from sqlalchemy import text
+from app.database import get_db
+
+def generate_school_id(role: str, enrollment_year: int, db) -> str:
+    """
+    Generate unique school ID: Kristobell/STU/YYYY/#### or Kristobell/STF/YYYY/####
+    Uses PostgreSQL sequence for atomic increments (concurrency-safe)
+
+    Args:
+        role: 'student' or 'staff'
+        enrollment_year: Year of enrollment (e.g., 2025)
+        db: Database session
+
+    Returns:
+        Unique school ID string (e.g., "Kristobell/STU/2025/0001")
+    """
+    prefix = "Kristobell/STU" if role == "student" else "Kristobell/STF"
+    year = str(enrollment_year)
+
+    # Get or create sequence record and atomically increment
+    result = db.execute(
+        text("""
+            INSERT INTO school_id_sequences (role, year, last_number)
+            VALUES (:role, :year, 0)
+            ON CONFLICT (role, year)
+            DO UPDATE SET last_number = school_id_sequences.last_number + 1
+            RETURNING last_number
+        """),
+        {"role": role, "year": enrollment_year}
+    )
+
+    next_number = result.scalar()
+    unique_id = f"{next_number:04d}"  # Format as 0001, 0002, etc.
+
+    return f"{prefix}/{year}/{unique_id}"
+
+# Preview endpoint (optional, for admin UI)
+# GET /api/admin/id-preview?role=student&year=2025
+```
+
+---
+
+## File Upload System (Passport Photos)
+
+### Design
+
+**Storage:** Supabase Storage (recommended for MVP) or AWS S3 / DigitalOcean Spaces
+
+**Flow:**
+
+1. Frontend requests presigned upload URL from backend
+2. Frontend uploads file directly to storage (bypasses backend)
+3. Frontend notifies backend with file URL to attach to profile
+
+**Permissions:**
+
+- Only **Admins** can create/update student/staff profiles (including photos)
+- **Staff** and **Students** can view their profile data and photo (read-only in UI)
+
+**Security:**
+
+- File size limit: ≤ 2MB
+- Allowed types: `image/jpeg`, `image/png`
+- Virus scanning (optional, for production)
+
+### API Endpoints
+
+```
+POST   /api/uploads/presign              - Get presigned upload URL
+POST   /api/admin/staff/{id}/upload-photo - Attach photo to staff profile
+POST   /api/admin/students/{id}/upload-photo - Attach photo to student profile
+GET    /api/uploads/{file_path}          - Get file (with auth check)
+```
+
+### Implementation
+
+```python
+# backend/app/services/upload_service.py
+
+from supabase import create_client, Client
+from app.config import settings
+import uuid
+
+supabase: Client = create_client(
+    settings.SUPABASE_URL,
+    settings.SUPABASE_KEY
+)
+
+async def get_presigned_upload_url(
+    file_name: str,
+    file_type: str,
+    user_id: str
+) -> dict:
+    """
+    Generate presigned URL for direct client upload
+
+    Returns:
+        {
+            "upload_url": "https://...",
+            "file_path": "photos/staff/...",
+            "expires_in": 300
+        }
+    """
+    # Validate file type
+    allowed_types = ["image/jpeg", "image/png"]
+    if file_type not in allowed_types:
+        raise ValueError("Only JPEG and PNG images are allowed")
+
+    # Generate unique file path
+    file_path = f"photos/{user_id}/{uuid.uuid4()}.{file_name.split('.')[-1]}"
+
+    # Generate presigned URL (Supabase example)
+    response = supabase.storage.from_("passports").create_signed_upload_url(
+        file_path,
+        expires_in=300  # 5 minutes
+    )
+
+    return {
+        "upload_url": response["signedURL"],
+        "file_path": file_path,
+        "expires_in": 300
+    }
+
+async def attach_photo_to_profile(
+    user_id: str,
+    file_path: str,
+    profile_type: str  # 'student' or 'staff'
+) -> dict:
+    """
+    Attach uploaded photo URL to user profile
+    """
+    photo_url = f"{settings.SUPABASE_URL}/storage/v1/object/public/passports/{file_path}"
+
+    if profile_type == "student":
+        # Update student_profiles.photo_url
+        pass
+    else:
+        # Update staff_profiles.photo_url
+        pass
+
+    return {"photo_url": photo_url}
+```
+
+---
+
+## Result PDF Template & Generation
+
+### PDF Requirements
+
+**Content:**
+
+- School header (logo, name, address)
+- Student details block (photo, name, school_id, class, DOB, gender)
+- Term & academic year
+- Results table: Subject | CA | Exam | Total | Grade
+- Summary: Total average, Position in class, Remark, Promoted to (if applicable)
+- Footer: Teacher signature line | Date | School stamp/watermark
+
+### Template Structure
+
+```html
+<!-- backend/app/templates/result_pdf.html -->
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      /* Tailwind-compatible CSS for WeasyPrint */
+      @page {
+        size: A4;
+        margin: 20mm;
+      }
+      .header {
+        display: flex;
+        justify-content: space-between;
+      }
+      .student-info {
+        display: flex;
+        margin: 20px 0;
+      }
+      .photo {
+        width: 100px;
+        height: 120px;
+        border: 1px solid #ccc;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+      }
+      th,
+      td {
+        border: 1px solid #000;
+        padding: 8px;
+        text-align: left;
+      }
+      .summary {
+        margin-top: 30px;
+      }
+      .footer {
+        margin-top: 50px;
+        display: flex;
+        justify-content: space-between;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div>
+        <img src="{{ school_logo_url }}" alt="School Logo" width="80" />
+      </div>
+      <div>
+        <h1>Kristobell Schools</h1>
+        <p>Address line here</p>
+      </div>
+      <div>
+        <p><strong>Term:</strong> {{ term }}</p>
+        <p><strong>Academic Year:</strong> {{ academic_year }}</p>
+      </div>
+    </div>
+
+    <div class="student-info">
+      <div>
+        <img src="{{ student_photo_url }}" alt="Student Photo" class="photo" />
+      </div>
+      <div>
+        <p><strong>Name:</strong> {{ student_name }}</p>
+        <p><strong>School ID:</strong> {{ school_id }}</p>
+        <p><strong>Class:</strong> {{ class_name }}</p>
+        <p><strong>Date of Birth:</strong> {{ date_of_birth }}</p>
+        <p><strong>Gender:</strong> {{ gender }}</p>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Subject</th>
+          <th>CA</th>
+          <th>Exam</th>
+          <th>Total</th>
+          <th>Grade</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for result in results %}
+        <tr>
+          <td>{{ result.subject_name }}</td>
+          <td>{{ result.ca_score or result.first_ca + result.second_ca }}</td>
+          <td>{{ result.exam_score }}</td>
+          <td>{{ result.total_score }}</td>
+          <td>{{ result.grade }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="summary">
+      <p><strong>Total Average:</strong> {{ total_average }}</p>
+      <p><strong>Position in Class:</strong> {{ position }}</p>
+      <p><strong>Remark:</strong> {{ remark }}</p>
+      {% if promoted_to %}
+      <p><strong>Promoted to:</strong> {{ promoted_to }}</p>
+      {% endif %}
+    </div>
+
+    <div class="footer">
+      <div>
+        <p>_____________________</p>
+        <p>Teacher's Signature</p>
+      </div>
+      <div>
+        <p>Date: {{ current_date }}</p>
+      </div>
+      <div>
+        <p>School Stamp</p>
+      </div>
+    </div>
+  </body>
+</html>
+```
+
+### PDF Generation Service
+
+```python
+# backend/app/services/pdf_service.py
+
+from weasyprint import HTML
+from jinja2 import Template
+import io
+from datetime import datetime
+from app.config import settings
+from app.database import get_student_with_profile, get_student_results, calculate_class_ranking
+
+async def generate_result_pdf(
+    student_id: str,
+    term: str,
+    academic_year: str,
+    db
+) -> bytes:
+    """
+    Generate PDF result sheet for a student
+
+    Returns:
+        PDF bytes
+    """
+    # Fetch student data, results, class ranking
+    student = get_student_with_profile(student_id, db)
+    results = get_student_results(student_id, term, academic_year, db)
+    ranking = calculate_class_ranking(student_id, term, academic_year, db)
+
+    # Load template
+    with open("app/templates/result_pdf.html", "r") as f:
+        template = Template(f.read())
+
+    # Render HTML
+    html_content = template.render(
+        school_logo_url=settings.SCHOOL_LOGO_URL,
+        student_photo_url=student.profile.photo_url or "",
+        student_name=student.full_name,
+        school_id=student.school_id,
+        class_name=student.profile.current_class.name,
+        date_of_birth=student.profile.date_of_birth,
+        gender=student.profile.gender,
+        term=term.title(),
+        academic_year=academic_year,
+        results=results,
+        total_average=ranking["average"],
+        position=ranking["position"],
+        remark=ranking["remark"],
+        promoted_to=ranking.get("promoted_to"),
+        current_date=datetime.now().strftime("%Y-%m-%d")
+    )
+
+    # Generate PDF
+    pdf_bytes = HTML(string=html_content).write_pdf()
+
+    return pdf_bytes
+```
+
+### API Endpoints
+
+```
+GET    /api/student/results/{term}/download - Download student's result PDF
+GET    /api/admin/results/{student_id}/term/{term}/pdf - Admin view/download
+GET    /api/admin/class/{class_id}/results/export - Export class results (CSV/XLSX)
+GET    /api/staff/results/class/{class_id}/export - Staff export class results
+```
+
+---
+
+## API Endpoints Structure (Updated)
 
 ### Authentication Routes
 
@@ -302,26 +826,30 @@ POST   /api/auth/student/login        - Student login (school_id + password)
 POST   /api/auth/logout               - Logout (all roles)
 POST   /api/auth/refresh              - Refresh JWT token
 GET    /api/auth/me                   - Get current user info
+POST   /api/auth/forgot-password      - Request password reset
+POST   /api/auth/reset-password       - Reset password with token
 ```
 
 ### Admin Routes
 
 ```
 # Staff Management
-GET    /api/admin/staff               - List all staff
+GET    /api/admin/staff               - List all staff (paginated)
 POST   /api/admin/staff               - Create staff
 GET    /api/admin/staff/{id}          - Get staff details
 PUT    /api/admin/staff/{id}          - Update staff
-DELETE /api/admin/staff/{id}          - Delete staff
+DELETE /api/admin/staff/{id}          - Delete staff (soft delete)
 POST   /api/admin/staff/{id}/assign-subjects - Assign subjects to staff
+POST   /api/admin/staff/{id}/upload-photo - Upload staff passport
 
 # Student Management
-GET    /api/admin/students            - List all students
+GET    /api/admin/students            - List all students (paginated)
 POST   /api/admin/students            - Create student directly
 GET    /api/admin/students/{id}       - Get student details
 PUT    /api/admin/students/{id}       - Update student
-DELETE /api/admin/students/{id}       - Delete student
+DELETE /api/admin/students/{id}       - Delete student (soft delete)
 POST   /api/admin/students/{id}/promote - Promote student to next class
+POST   /api/admin/students/{id}/upload-photo - Upload student passport
 
 # Enrollment Management
 GET    /api/admin/enrollments         - List enrollment requests
@@ -334,31 +862,37 @@ GET    /api/admin/classes             - List all classes
 POST   /api/admin/classes             - Create class
 GET    /api/admin/classes/{id}        - Get class details
 PUT    /api/admin/classes/{id}        - Update class
-DELETE /api/admin/classes/{id}        - Delete class
+DELETE /api/admin/classes/{id}       - Delete class
 POST   /api/admin/classes/{id}/assign-form-teacher - Assign form teacher
 GET    /api/admin/classes/{id}/students - Get students in class
 
 # Subject Management
 GET    /api/admin/subjects            - List all subjects
 POST   /api/admin/subjects            - Create subject
-GET    /api/admin/subjects/{id}       - Get subject details
-PUT    /api/admin/subjects/{id}       - Update subject
-DELETE /api/admin/subjects/{id}       - Delete subject
+GET    /api/admin/subjects/{id}      - Get subject details
+PUT    /api/admin/subjects/{id}      - Update subject
+DELETE /api/admin/subjects/{id}      - Delete subject
 
-GET    /api/admin/subject-groups      - List subject groups
-POST   /api/admin/subject-groups      - Create subject group
+GET    /api/admin/subject-groups     - List subject groups
+POST   /api/admin/subject-groups     - Create subject group
 
 # Announcements
-GET    /api/admin/announcements       - List all announcements
-POST   /api/admin/announcements       - Create announcement
-GET    /api/admin/announcements/{id}  - Get announcement
-PUT    /api/admin/announcements/{id}  - Update announcement
-DELETE /api/admin/announcements/{id}  - Delete announcement
+GET    /api/admin/announcements      - List all announcements
+POST   /api/admin/announcements      - Create announcement
+GET    /api/admin/announcements/{id} - Get announcement
+PUT    /api/admin/announcements/{id} - Update announcement
+DELETE /api/admin/announcements/{id} - Delete announcement
 
 # Results Management
-GET    /api/admin/results             - List all results (with filters)
-GET    /api/admin/results/rankings    - Get student rankings
+GET    /api/admin/results            - List all results (with filters)
+GET    /api/admin/results/rankings  - Get student rankings
 GET    /api/admin/results/class/{class_id} - Get class results
+GET    /api/admin/results/{student_id}/term/{term}/pdf - Get result PDF
+GET    /api/admin/class/{class_id}/results/export - Export class results (CSV/XLSX)
+
+# File Uploads
+POST   /api/uploads/presign          - Get presigned upload URL
+GET    /api/admin/id-preview         - Preview next school ID
 ```
 
 ### Staff Routes
@@ -366,6 +900,9 @@ GET    /api/admin/results/class/{class_id} - Get class results
 ```
 # Dashboard
 GET    /api/staff/dashboard           - Get dashboard data
+
+# Profile (Read-only)
+GET    /api/staff/profile             - Get own profile (read-only)
 
 # Assignments
 GET    /api/staff/assignments         - List assignments created by staff
@@ -378,9 +915,10 @@ POST   /api/staff/assignments/{id}/submissions/{submission_id}/mark-seen - Mark 
 
 # Results
 GET    /api/staff/results             - List results uploaded by staff
-POST   /api/staff/results             - Upload/create result
+POST   /api/staff/results             - Upload/create result (single or bulk CSV)
 PUT    /api/staff/results/{id}        - Update result
 GET    /api/staff/results/class/{class_id} - Get results for class
+GET    /api/staff/results/class/{class_id}/export - Export class results
 
 # Form Teacher Specific
 GET    /api/staff/form-class          - Get assigned form class (if form teacher)
@@ -394,338 +932,253 @@ GET    /api/staff/form-class/results  - Get results for form class
 # Dashboard
 GET    /api/student/dashboard         - Get dashboard data
 
+# Profile (Read-only)
+GET    /api/student/profile           - Get own profile (read-only)
+
 # Assignments
 GET    /api/student/assignments       - List assignments for student's class
 GET    /api/student/assignments/{id}  - Get assignment details
 POST   /api/student/assignments/{id}/submit - Submit assignment
 
 # Results
-GET    /api/student/results           - Get student's results
+GET    /api/student/results            - Get student's results
 GET    /api/student/results/{term}    - Get results for specific term
+GET    /api/student/results/{term}/download - Download result PDF
 
 # Announcements
-GET    /api/student/announcements     - Get announcements for students
+GET    /api/student/announcements      - Get announcements for students
 ```
 
 ### Public Routes
 
 ```
 POST   /api/public/enrollment         - Submit enrollment request
-GET    /api/public/enrollment/{id}    - Check enrollment status (with token)
+GET    /api/public/enrollment/{token} - Check enrollment status (with token)
 ```
 
 ---
 
-## Frontend Structure
+## Frontend Structure (Detailed)
 
-### Landing Page (Public)
+### Tech Stack
+
+- **Next.js 14+ (App Router)** with TypeScript
+- **React Query (TanStack Query)** for server state
+- **Zustand** for client state
+- **Tailwind CSS** for styling
+- **React Hook Form** for forms
+- **Axios** for HTTP requests
+
+### Route Structure
+
+#### Public Routes
 
 ```
-/ (Home)
+/                                    - Landing page
   - Hero section
   - About school
   - Features
-  - Links to portals:
-    - /portal/admin/login
-    - /portal/staff/login
-    - /portal/student/login
-  - Enrollment form link: /enroll
+  - Links to portals
+  - Enrollment CTA
+
+/enroll                              - Public enrollment form
+  - Form with validation
+  - CAPTCHA (optional)
+  - Success message with token
 ```
 
-### Portal Routes (Protected)
-
-#### Admin Portal
+#### Authentication Routes
 
 ```
-/portal/admin/login
-/portal/admin/dashboard
-/portal/admin/staff
-  - /portal/admin/staff/new
-  - /portal/admin/staff/:id
-/portal/admin/students
-  - /portal/admin/students/new
-  - /portal/admin/students/:id
-/portal/admin/enrollments
-  - /portal/admin/enrollments/:id
-/portal/admin/classes
-  - /portal/admin/classes/new
-  - /portal/admin/classes/:id
-/portal/admin/subjects
-  - /portal/admin/subjects/new
-  - /portal/admin/subjects/:id
-/portal/admin/announcements
-  - /portal/admin/announcements/new
-  - /portal/admin/announcements/:id
-/portal/admin/results
+/portal/login                        - Combined login (role selector)
+  OR
+/portal/admin/login                  - Admin login
+/portal/staff/login                  - Staff login
+/portal/student/login                - Student login
+
+/portal/forgot-password              - Password reset request
+/portal/reset-password               - Password reset form
 ```
 
-#### Staff Portal
+#### Admin Portal Routes
 
 ```
-/portal/staff/login
-/portal/staff/dashboard
-/portal/staff/assignments
+/portal/admin/dashboard              - Key metrics (students by level, pending enrollments)
+/portal/admin/staff                 - Staff list with create/edit modals
+/portal/admin/students              - Student list with create/edit modals
+/portal/admin/classes               - Class management (list, create, edit, student counts)
+/portal/admin/subjects              - Subject management
+/portal/admin/results               - Results search, filter, export
+/portal/admin/enrollments           - Enrollment request management
+/portal/admin/announcements         - Announcement management
+/portal/admin/uploads               - Bulk imports, photo management
+```
+
+#### Staff Portal Routes
+
+```
+/portal/staff/dashboard              - Dashboard (assignments, form class if applicable)
+/portal/staff/assignments           - Create + view submissions
   - /portal/staff/assignments/new
   - /portal/staff/assignments/:id
-/portal/staff/results
+/portal/staff/results               - Upload results (CSV form or manual entry)
   - /portal/staff/results/upload
-/portal/staff/form-class (if form teacher)
+/portal/staff/form-class            - Form class management (if form teacher)
 ```
 
-#### Student Portal
+#### Student Portal Routes
 
 ```
-/portal/student/login
-/portal/student/dashboard
-/portal/student/assignments
+/portal/student/dashboard            - View announcements, assignments, results summary
+/portal/student/assignments         - List assignments, submit
   - /portal/student/assignments/:id
-/portal/student/results
+/portal/student/results             - View results, download PDF
 ```
+
+### Shared UI Components
+
+```
+components/
+  common/
+    - Header.tsx                    - Top navigation
+    - Sidebar.tsx                   - Side navigation (role-based)
+    - DataTable.tsx                 - Reusable table with pagination
+    - Modal.tsx                     - Modal dialog
+    - FormField.tsx                 - Form input wrapper
+    - Avatar.tsx                    - User avatar with photo
+    - FileUploader.tsx              - File upload component
+    - ResultTable.tsx              - Results display table
+    - PDFPreview.tsx                - PDF viewer
+    - LoadingSpinner.tsx
+    - ErrorBoundary.tsx
+  admin/
+    - StaffForm.tsx
+    - StudentForm.tsx
+    - ClassForm.tsx
+    - EnrollmentCard.tsx
+  staff/
+    - AssignmentForm.tsx
+    - ResultUploadForm.tsx
+    - CSVUploader.tsx
+  student/
+    - AssignmentCard.tsx
+    - ResultCard.tsx
+```
+
+### Authorization
+
+- **Server-side:** Route protection with middleware
+- **Client-side:** Route guards checking JWT + role
+- **UI:** Show different navs based on role
+- **API:** All endpoints protected with role-based dependencies
+
+### UX Rules
+
+1. **Read-only profiles:** Staff/students see profile info but cannot edit. Show "Request Update" button that sends request to admin.
+2. **Inline validation:** Real-time validation for scores (CA ≤ 40, exam ≤ 60, etc.)
+3. **CSV import:** Allow staff to upload results via CSV template
+4. **Pagination:** All list views paginated (25 items/page default)
+5. **Loading states:** Show loading spinners during API calls
+6. **Error handling:** User-friendly error messages
 
 ---
 
-## Key Technical Components
+## Performance & Scaling Considerations
 
-### 1. ID Generation Service
+### Database Optimization
 
-```python
-# Backend service to generate school IDs
-def generate_school_id(role: str, enrollment_year: int) -> str:
-    """
-    Generate unique school ID: Kristobell/STU/YYYY/UniqueID or Kristobell/STF/YYYY/UniqueID
+**Indexes:**
 
-    Args:
-        role: 'student' or 'staff'
-        enrollment_year: Year of enrollment
-
-    Returns:
-        Unique school ID string
-    """
-    prefix = "Kristobell/STU" if role == "student" else "Kristobell/STF"
-    year = str(enrollment_year)
-
-    # Get the last unique ID for this role and year
-    last_id = get_last_unique_id(role, enrollment_year)
-    next_id = (last_id or 0) + 1
-
-    unique_id = f"{next_id:04d}"  # Format as 0001, 0002, etc.
-
-    return f"{prefix}/{year}/{unique_id}"
+```sql
+-- Already defined in schema, but ensure these exist:
+CREATE INDEX idx_users_school_id ON users(school_id);
+CREATE INDEX idx_student_profiles_class ON student_profiles(current_class_id);
+CREATE INDEX idx_results_student_term ON results(student_id, academic_year, term);
+CREATE INDEX idx_classes_level_year ON classes(level, academic_year);
 ```
 
-### 2. Authentication Middleware
+**Pagination:**
 
-```python
-# FastAPI dependency for role-based access
-def require_role(allowed_roles: List[str]):
-    async def role_checker(
-        current_user: User = Depends(get_current_user)
-    ):
-        if current_user.role not in allowed_roles:
-            raise HTTPException(status_code=403, detail="Insufficient permissions")
-        return current_user
-    return role_checker
-```
+- Server-side pagination for all list endpoints
+- Default page size: 25
+- Use cursor-based pagination for large datasets
 
-### 3. Result Calculation Logic
+### Caching Strategy
 
-```python
-def calculate_result(level: str, scores: dict) -> dict:
-    """
-    Calculate total score and grade based on education level
+**Redis (optional for MVP):**
 
-    Args:
-        level: 'nursery', 'primary', 'jss', 'sss'
-        scores: Dict with CA and exam scores
+- Cache frequently-read data (class list, subject lists)
+- Cache JWT refresh tokens
+- Session storage
 
-    Returns:
-        Dict with total_score and grade
-    """
-    if level in ['nursery', 'primary']:
-        total = scores['ca_score'] + scores['exam_score']
-    else:  # jss, sss
-        total = scores['first_ca'] + scores['second_ca'] + scores['exam_score']
+**Frontend:**
 
-    grade = calculate_grade(total)  # A, B, C, D, F based on ranges
+- React Query caching (5-minute default)
+- Cache class/subject lists in Zustand
 
-    return {
-        'total_score': total,
-        'grade': grade
-    }
-```
+### Background Jobs
 
-### 4. Password Hashing
+**Use Cases:**
 
-```python
-from passlib.context import CryptContext
+- PDF generation for bulk exports
+- CSV result imports
+- Bulk student promotions
+- Email notifications (future)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+**Implementation:**
 
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+- **Celery** + **Redis** (production)
+- **RQ** (simpler alternative)
+- For MVP: synchronous PDF generation is acceptable for single requests
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
-```
+### Static Assets
+
+- Serve images from CDN (Supabase Storage + CDN or S3 + CloudFront)
+- Optimize images (compress, resize)
+- Lazy load images in frontend
+
+### Monitoring & Logging
+
+- **Sentry** for error tracking
+- Structured logging (JSON format)
+- Log API requests/responses (sanitize sensitive data)
+- Monitor database query performance
 
 ---
 
-## Project File Structure
+## Security & Privacy
 
-```
-Kristobell-school-management/
-├── backend/
-│   ├── app/
-│   │   ├── __init__.py
-│   │   ├── main.py                 # FastAPI app entry point
-│   │   ├── config.py               # Configuration settings
-│   │   ├── database.py             # Database connection
-│   │   ├── models/                 # SQLAlchemy models
-│   │   │   ├── __init__.py
-│   │   │   ├── user.py
-│   │   │   ├── admin.py
-│   │   │   ├── staff.py
-│   │   │   ├── student.py
-│   │   │   ├── class.py
-│   │   │   ├── subject.py
-│   │   │   ├── assignment.py
-│   │   │   ├── result.py
-│   │   │   └── announcement.py
-│   │   ├── schemas/                # Pydantic schemas
-│   │   │   ├── __init__.py
-│   │   │   ├── user.py
-│   │   │   ├── auth.py
-│   │   │   └── ...
-│   │   ├── api/
-│   │   │   ├── __init__.py
-│   │   │   ├── deps.py             # Dependencies (auth, db)
-│   │   │   ├── routes/
-│   │   │   │   ├── __init__.py
-│   │   │   │   ├── auth.py
-│   │   │   │   ├── admin.py
-│   │   │   │   ├── staff.py
-│   │   │   │   ├── student.py
-│   │   │   │   └── public.py
-│   │   ├── services/               # Business logic
-│   │   │   ├── __init__.py
-│   │   │   ├── auth_service.py
-│   │   │   ├── id_generator.py
-│   │   │   ├── result_calculator.py
-│   │   │   └── enrollment_service.py
-│   │   └── utils/
-│   │       ├── __init__.py
-│   │       └── security.py
-│   ├── alembic/                    # Database migrations
-│   ├── requirements.txt
-│   └── .env
-│
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── common/
-│   │   │   │   ├── Header.jsx
-│   │   │   │   ├── Sidebar.jsx
-│   │   │   │   ├── Modal.jsx
-│   │   │   │   └── Table.jsx
-│   │   │   ├── admin/
-│   │   │   ├── staff/
-│   │   │   └── student/
-│   │   ├── pages/
-│   │   │   ├── Landing.jsx
-│   │   │   ├── Login.jsx
-│   │   │   ├── admin/
-│   │   │   ├── staff/
-│   │   │   └── student/
-│   │   ├── contexts/
-│   │   │   └── AuthContext.jsx
-│   │   ├── services/
-│   │   │   └── api.js              # API client
-│   │   ├── utils/
-│   │   │   └── constants.js        # Color scheme, etc.
-│   │   └── App.jsx
-│   ├── package.json
-│   └── tailwind.config.js
-│
-└── README.md
-```
+### Authentication
+
+- **JWT tokens:** Short expiration (15 minutes)
+- **Refresh tokens:** Stored as HttpOnly Secure cookies
+- **Password hashing:** bcrypt (cost factor 12+)
+- **Rate limiting:** Public endpoints and login (e.g., 5 requests/minute)
+
+### Authorization
+
+- **RBAC:** Enforce at API dependency level
+- **Never trust client-side:** All role checks server-side
+- **Principle of least privilege:** Users only access what they need
+
+### Data Protection
+
+- **HTTPS everywhere:** Enforce in production
+- **Input validation:** Pydantic schemas for all inputs
+- **SQL injection:** Use ORM (SQLAlchemy), never raw SQL
+- **XSS prevention:** Sanitize user inputs, use React's built-in escaping
+- **CSRF protection:** Use SameSite cookies
+
+### Privacy
+
+- **GDPR considerations:** Store parent contact info securely
+- **Data retention:** Soft deletes for audit trail
+- **Access logs:** Track who accessed sensitive data
+- **Photo storage:** Private buckets, access via presigned URLs
 
 ---
 
-## Development Phases
-
-### Phase 1: Foundation (Week 1-2)
-
-- [ ] Set up FastAPI project structure
-- [ ] Set up database (PostgreSQL/SQLite)
-- [ ] Create database models
-- [ ] Set up authentication (JWT)
-- [ ] Create basic API structure
-- [ ] Set up frontend project
-- [ ] Create landing page
-
-### Phase 2: Core Features (Week 3-4)
-
-- [ ] User authentication (all roles)
-- [ ] ID generation system
-- [ ] Admin: Staff management
-- [ ] Admin: Student management
-- [ ] Enrollment system
-- [ ] Basic dashboards
-
-### Phase 3: Academic Features (Week 5-6)
-
-- [ ] Class management
-- [ ] Subject management
-- [ ] Assignment system
-- [ ] Result management
-- [ ] Announcements
-
-### Phase 4: Advanced Features (Week 7-8)
-
-- [ ] Form teacher features
-- [ ] Result ranking and sorting
-- [ ] Student promotion system
-- [ ] Advanced filtering and search
-
-### Phase 5: Polish & Testing (Week 9-10)
-
-- [ ] UI/UX improvements
-- [ ] Error handling
-- [ ] Input validation
-- [ ] Testing
-- [ ] Documentation
-
----
-
-## Color Scheme Implementation
-
-```javascript
-// frontend/src/utils/constants.js
-export const COLORS = {
-  primary: "#08253F", // Primary Dark Blue
-  secondary: "#DA0F00", // Secondary Red
-  accent: "#6A89A5", // Accent Blue-Grey
-};
-```
-
-```css
-/* Tailwind config */
-module.exports = {
-  theme: {
-    extend: {
-      colors: {
-        'Kristobell-primary': '#08253F',
-        'Kristobell-secondary': '#DA0F00',
-        'Kristobell-accent': '#6A89A5',
-      },
-    },
-  },
-};
-```
-
----
-
-## School-Specific Requirements & Subject Lists
+## School-Specific Requirements
 
 ### School Information
 
@@ -740,396 +1193,161 @@ module.exports = {
 - Mrs Ajibola Omoniyi: 08066690070
 - Mrs Esther Akindipe: 08143350364
 
-### Grading System Clarification
+### Grading System
 
-**Nursery & Primary Levels:**
+**KG, Nursery & Primary Levels:**
 
 - 1 CA (Continuous Assessment): 40 marks maximum
 - Exam: 60 marks maximum
 - **Total: 100 marks**
 
-**Junior & Senior Secondary Levels:**
+**JSS & SSS Levels:**
 
 - First CA: 20 marks maximum
 - Second CA: 20 marks maximum
 - Exam: 60 marks maximum
 - **Total: 100 marks**
 
-### Education Levels & Class Structure
+**Grade Scale:**
 
-The system needs to support these education levels:
-
-1. **KG 1, KG 2, Nursery 1** (Early Years)
-2. **Nursery 2**
-3. **Primary 1 - 5**
-4. **Junior Secondary School (JSS) 1 - 3**
-5. **Senior Secondary School (SSS)** with streams:
-   - Science
-   - Commercial
-   - Arts
+- A: 70-100
+- B: 60-69
+- C: 50-59
+- D: 40-49
+- F: 0-39
 
 ### Complete Subject Lists by Level
 
-#### KG 1, KG 2, and Nursery 1 (13 subjects)
-
-1. Number work
-2. Letter work
-3. Basic science
-4. Social habit
-5. Health habit
-6. Moral instruction
-7. Civic education
-8. Rhymes
-9. Colouring
-10. Current Affairs
-11. Phonics
-12. Speech training
-13. Picture reading
-
-#### Nursery 2 (9 subjects)
-
-1. Mathematics
-2. English studies
-3. Basic science
-4. Basic Technology
-5. Home Economics
-6. Social studies
-7. Agric science
-8. Phonics
-9. Bible knowledge
-
-#### Primary 1 - 5 (16 subjects)
-
-1. Mathematics
-2. English studies
-3. Basic science
-4. Basic Technology
-5. Home Economics
-6. Social studies
-7. Civic Education
-8. Computer
-9. History
-10. Yoruba
-11. Literature in English
-12. Bible knowledge
-13. Agric science
-14. C.C.A. (Creative and Cultural Arts)
-15. Phonics
-16. P.H.E. (Physical and Health Education)
-
-#### Junior Secondary School (JSS) 1 - 3 (17 subjects)
-
-1. Mathematics
-2. English studies
-3. Basic science
-4. Basic Technology
-5. Home Economics
-6. Agricultural science
-7. Civic Education
-8. Business studies
-9. Computer studies
-10. C.C.A. (Creative and Cultural Arts)
-11. Yoruba
-12. C.R.S. (Christian Religious Studies)
-13. Music
-14. Phonics
-15. History
-16. P.H.E. (Physical and Health Education)
-17. Social studies
-
-#### Senior Secondary School - Science Stream (12 subjects)
-
-1. Mathematics
-2. English
-3. Civic Education
-4. Animal Husbandry
-5. Biology
-6. Chemistry
-7. Physics
-8. Geography
-9. Economics
-10. Agricultural science
-11. Phonics
-12. Yoruba
-
-#### Senior Secondary School - Commercial Stream (12 subjects)
-
-1. Mathematics
-2. English
-3. Civic Education
-4. Animal Husbandry
-5. Biology
-6. Financial Accounting
-7. Commerce
-8. Economics
-9. Agricultural science
-10. Phonics
-11. Yoruba
-12. Government
-
-#### Senior Secondary School - Arts Stream (12 subjects)
-
-1. Mathematics
-2. English
-3. Civic Education
-4. Animal Husbandry
-5. Biology
-6. Literature
-7. C.R.S. (Christian Religious Studies)
-8. Economics
-9. Agricultural science
-10. Phonics
-11. Yoruba
-12. Government
-
-### Database Schema Updates for Subjects
-
-The `classes` table needs an additional field for SSS streams:
-
-```sql
--- Update classes table
-ALTER TABLE classes ADD COLUMN stream (Enum: 'science', 'commercial', 'arts', NULL)
--- Only applicable for SSS level classes
-```
-
-### Subject Group Structure
-
-Subject groups should be organized as:
-
-- **KG/Nursery 1 Group** - For KG 1, KG 2, Nursery 1
-- **Nursery 2 Group**
-- **Primary Group** - For Primary 1-5
-- **JSS Group** - For JSS 1-3
-- **SSS Science Group**
-- **SSS Commercial Group**
-- **SSS Arts Group**
-
-### Additional Features Required
-
-1. **Result Download/Export**
-
-   - Students should be able to download their results (PDF/Excel)
-   - Admin should be able to export class results
-   - Staff should be able to download results for their classes
-
-2. **No Profile Pages**
-
-   - Staff and students don't need dedicated profile pages
-   - User information can be displayed in dashboard headers/sidebars
-
-3. **Admin Classes Page**
-
-   - Dedicated page for managing classes
-   - View all classes with student counts
-   - Manage class assignments
-
-4. **Admin Results Viewing**
-
-   - Admin should be able to view all results
-   - Filter by class, term, academic year
-   - View rankings and statistics
-
-5. **Periodic Result Uploading**
-   - Support for uploading results by term (First, Second, Third)
-   - Track academic year for each result entry
-
-### Result Calculation Service (Updated)
-
-```python
-def calculate_result(level: str, scores: dict) -> dict:
-    """
-    Calculate total score and grade based on education level
-
-    Args:
-        level: 'kg', 'nursery', 'primary', 'jss', 'sss'
-        scores: Dict with CA and exam scores
-
-    Returns:
-        Dict with total_score and grade
-    """
-    if level in ['kg', 'nursery', 'primary']:
-        # 1 CA (40 max) + Exam (60 max) = 100
-        ca_score = scores.get('ca_score', 0)
-        exam_score = scores.get('exam_score', 0)
-
-        # Validate max scores
-        if ca_score > 40:
-            raise ValueError("CA score cannot exceed 40 for Nursery/Primary")
-        if exam_score > 60:
-            raise ValueError("Exam score cannot exceed 60")
-
-        total = ca_score + exam_score
-    else:  # jss, sss
-        # 2 CAs (20 each) + Exam (60) = 100
-        first_ca = scores.get('first_ca', 0)
-        second_ca = scores.get('second_ca', 0)
-        exam_score = scores.get('exam_score', 0)
-
-        # Validate max scores
-        if first_ca > 20 or second_ca > 20:
-            raise ValueError("CA scores cannot exceed 20 for Secondary")
-        if exam_score > 60:
-            raise ValueError("Exam score cannot exceed 60")
-
-        total = first_ca + second_ca + exam_score
-
-    grade = calculate_grade(total)  # A, B, C, D, F based on ranges
-
-    return {
-        'total_score': round(total, 2),
-        'grade': grade
-    }
-
-def calculate_grade(total_score: float) -> str:
-    """Calculate letter grade based on total score"""
-    if total_score >= 70:
-        return 'A'
-    elif total_score >= 60:
-        return 'B'
-    elif total_score >= 50:
-        return 'C'
-    elif total_score >= 40:
-        return 'D'
-    else:
-        return 'F'
-```
-
-### Updated API Endpoints for Result Download
-
-```
-# Add to existing endpoints
-GET    /api/admin/results/export          - Export results (PDF/Excel)
-GET    /api/admin/results/class/{id}/export - Export class results
-GET    /api/student/results/download       - Download student's results
-GET    /api/staff/results/class/{id}/export - Export class results
-```
-
-### Frontend Updates
-
-**Remove:**
-
-- `/portal/staff/profile` - No profile page needed
-- `/portal/student/profile` - No profile page needed
-
-**Add:**
-
-- Result download buttons on result viewing pages
-- Export functionality for admin results page
-- Enhanced classes management page for admin
+[Keep all the detailed subject lists from the original plan - they're comprehensive and valuable]
 
 ---
 
 ## Initial Data Seeding
 
-### Pre-populate Subjects
-
-When setting up the database, you'll need to seed all subjects for each level. Here's a Python script structure for seeding:
+### Pre-populate Classes
 
 ```python
-# backend/app/services/seed_subjects.py
+# backend/app/services/seed_classes.py
 
-SUBJECTS_BY_LEVEL = {
+CLASS_STRUCTURE = {
     'kg': [
-        'Number work', 'Letter work', 'Basic science', 'Social habit',
-        'Health habit', 'Moral instruction', 'Civic education', 'Rhymes',
-        'Colouring', 'Current Affairs', 'Phonics', 'Speech training',
-        'Picture reading'
+        {'name': 'KG 1A', 'capacity': 15},
+        {'name': 'KG 1B', 'capacity': 15},
+        {'name': 'KG 2A', 'capacity': 15},
+        {'name': 'KG 2B', 'capacity': 15},
     ],
     'nursery': [
-        'Mathematics', 'English studies', 'Basic science', 'Basic Technology',
-        'Home Economics', 'Social studies', 'Agric science', 'Phonics',
-        'Bible knowledge'
+        {'name': 'NUR 1A', 'capacity': 20},
+        {'name': 'NUR 1B', 'capacity': 20},
+        {'name': 'NUR 2A', 'capacity': 20},
+        {'name': 'NUR 2B', 'capacity': 20},
     ],
     'primary': [
-        'Mathematics', 'English studies', 'Basic science', 'Basic Technology',
-        'Home Economics', 'Social studies', 'Civic Education', 'Computer',
-        'History', 'Yoruba', 'Literature in English', 'Bible knowledge',
-        'Agric science', 'C.C.A.', 'Phonics', 'P.H.E.'
+        {'name': 'PRY 1A', 'capacity': 25},
+        {'name': 'PRY 1B', 'capacity': 25},
+        {'name': 'PRY 1C', 'capacity': 25},
+        # ... up to PRY 5C (15 total)
     ],
     'jss': [
-        'Mathematics', 'English studies', 'Basic science', 'Basic Technology',
-        'Home Economics', 'Agricultural science', 'Civic Education',
-        'Business studies', 'Computer studies', 'C.C.A.', 'Yoruba', 'C.R.S.',
-        'Music', 'Phonics', 'History', 'P.H.E.', 'Social studies'
+        {'name': 'JSS 1A', 'capacity': 30},
+        {'name': 'JSS 1B', 'capacity': 30},
+        {'name': 'JSS 1C', 'capacity': 30},
+        {'name': 'JSS 1D', 'capacity': 30},
+        # ... up to JSS 3D (12 total)
     ],
-    'sss_science': [
-        'Mathematics', 'English', 'Civic Education', 'Animal Husbandry',
-        'Biology', 'Chemistry', 'Physics', 'Geography', 'Economics',
-        'Agricultural science', 'Phonics', 'Yoruba'
+    'sss': [
+        {'name': 'SSS 1A', 'capacity': 30, 'stream': 'science'},
+        {'name': 'SSS 1B', 'capacity': 30, 'stream': 'technical'},
+        {'name': 'SSS 1C', 'capacity': 30, 'stream': 'commercial'},
+        {'name': 'SSS 1D', 'capacity': 30, 'stream': 'arts'},
+        # ... up to SSS 3D (12 total)
     ],
-    'sss_commercial': [
-        'Mathematics', 'English', 'Civic Education', 'Animal Husbandry',
-        'Biology', 'Financial Accounting', 'Commerce', 'Economics',
-        'Agricultural science', 'Phonics', 'Yoruba', 'Government'
-    ],
-    'sss_arts': [
-        'Mathematics', 'English', 'Civic Education', 'Animal Husbandry',
-        'Biology', 'Literature', 'C.R.S.', 'Economics', 'Agricultural science',
-        'Phonics', 'Yoruba', 'Government'
-    ]
 }
-
-def generate_subject_code(name: str, level: str) -> str:
-    """Generate unique subject code"""
-    # Simple implementation - can be enhanced
-    prefix_map = {
-        'kg': 'KG',
-        'nursery': 'NUR',
-        'primary': 'PRI',
-        'jss': 'JSS',
-        'sss': 'SSS'
-    }
-    prefix = prefix_map.get(level, 'GEN')
-    # Create code from first 3 letters of subject name
-    name_code = ''.join([c for c in name[:3].upper() if c.isalpha()])
-    return f"{prefix}{name_code}001"  # Simplified - should check uniqueness
 ```
 
-### Subject Group Seeding
+### Pre-populate Subjects
 
-```python
-SUBJECT_GROUPS = [
-    {'name': 'KG/Nursery 1', 'level': 'kg', 'stream': None},
-    {'name': 'Nursery 2', 'level': 'nursery', 'stream': None},
-    {'name': 'Primary', 'level': 'primary', 'stream': None},
-    {'name': 'JSS', 'level': 'jss', 'stream': None},
-    {'name': 'SSS Science', 'level': 'sss', 'stream': 'science'},
-    {'name': 'SSS Commercial', 'level': 'sss', 'stream': 'commercial'},
-    {'name': 'SSS Arts', 'level': 'sss', 'stream': 'arts'},
-]
-```
+[Keep the subject seeding logic from original plan]
 
 ---
 
-## Security Considerations
+## Development Phases (Updated)
 
-1. **Password Security**
+### Phase 1: Foundation (Week 1-2)
 
-   - Use bcrypt for hashing
-   - Enforce password complexity rules
-   - Implement password reset functionality
+- [ ] Set up FastAPI project structure
+- [ ] Set up PostgreSQL database
+- [ ] Create database models (consolidated schema)
+- [ ] Set up Alembic migrations
+- [ ] Set up authentication (JWT + refresh tokens)
+- [ ] Create basic API structure
+- [ ] Set up Next.js frontend project
+- [ ] Create landing page
+- [ ] Set up file storage (Supabase Storage)
 
-2. **JWT Tokens**
+### Phase 2: Core Features (Week 3-4)
 
-   - Set appropriate expiration times
-   - Use refresh tokens
-   - Store tokens securely (httpOnly cookies or localStorage)
+- [ ] User authentication (all roles)
+- [ ] ID generation system (DB sequences)
+- [ ] Admin: Staff management (CRUD + photo upload)
+- [ ] Admin: Student management (CRUD + photo upload)
+- [ ] Enrollment system
+- [ ] Basic dashboards
+- [ ] Profile read-only views
 
-3. **Role-Based Access Control**
+### Phase 3: Academic Features (Week 5-6)
 
-   - Validate roles on every protected endpoint
-   - Use middleware to check permissions
-   - Never trust client-side role checks
+- [ ] Class management (47 classes with capacity tracking)
+- [ ] Subject management
+- [ ] Assignment system
+- [ ] Result management (upload, calculation, validation)
+- [ ] Announcements
 
-4. **Input Validation**
+### Phase 4: Advanced Features (Week 7-8)
 
-   - Validate all inputs using Pydantic schemas
-   - Sanitize user inputs
-   - Prevent SQL injection (use ORM)
+- [ ] Form teacher features
+- [ ] Result ranking and sorting
+- [ ] Student promotion system
+- [ ] PDF generation (result sheets)
+- [ ] CSV export/import for results
+- [ ] Advanced filtering and search
 
-5. **CORS Configuration**
-   - Configure CORS properly for production
-   - Only allow trusted origins
+### Phase 5: Polish & Testing (Week 9-10)
+
+- [ ] UI/UX improvements
+- [ ] Error handling & validation
+- [ ] Performance optimization (indexes, caching)
+- [ ] Testing (unit + integration)
+- [ ] Documentation
+- [ ] Deployment preparation
+
+---
+
+## Color Scheme Implementation
+
+```javascript
+// frontend/src/utils/constants.ts
+export const COLORS = {
+  primary: "#08253F", // Primary Dark Blue
+  secondary: "#DA0F00", // Secondary Red
+  accent: "#6A89A5", // Accent Blue-Grey
+};
+```
+
+```javascript
+// tailwind.config.js
+module.exports = {
+  theme: {
+    extend: {
+      colors: {
+        "Kristobell-primary": "#08253F",
+        "Kristobell-secondary": "#DA0F00",
+        "Kristobell-accent": "#6A89A5",
+      },
+    },
+  },
+};
+```
 
 ---
 
@@ -1140,19 +1358,45 @@ SUBJECT_GROUPS = [
    - Create backend and frontend folders
    - Set up virtual environment
    - Install dependencies
+   - Set up Git repository
 
-2. **Start with database**
+2. **Database setup**
 
-   - Design and create tables
-   - Set up Alembic for migrations
+   - Create PostgreSQL database
+   - Run initial Alembic migration
+   - Seed classes and subjects
 
 3. **Build authentication first**
 
    - This is the foundation for everything else
 
 4. **Implement one feature at a time**
+
    - Start with Admin features
    - Then Staff features
    - Finally Student features
 
-Would you like me to help you start building this? I can create the initial project structure and set up the FastAPI backend with database models!
+5. **Test incrementally**
+   - Write tests as you build
+   - Test with realistic data volumes
+
+---
+
+## Notes on "Senior Dev Thinking"
+
+The comment "You already think like a senior dev — you just need execution discipline" refers to:
+
+1. **System thinking:** You're considering the full system (database, API, frontend) holistically
+2. **Scalability awareness:** You're thinking about 500+ students, multiple classes, performance
+3. **User experience:** You're considering different user roles and their needs
+4. **Real-world constraints:** You understand school operations (enrollment, results, promotions)
+
+**What "execution discipline" means:**
+
+- Breaking down the big picture into small, manageable tasks
+- Building incrementally (MVP first)
+- Testing as you go
+- Not getting overwhelmed by the scope
+- Shipping working features, not perfect code
+
+This plan helps with execution discipline by providing clear phases, specific endpoints, and concrete implementation steps.

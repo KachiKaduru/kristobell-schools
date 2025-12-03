@@ -1,0 +1,119 @@
+<!-- backend/app/templates/result_pdf.html -->
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      /* Tailwind-compatible CSS for WeasyPrint */
+      @page {
+        size: A4;
+        margin: 20mm;
+      }
+      .header {
+        display: flex;
+        justify-content: space-between;
+      }
+      .student-info {
+        display: flex;
+        margin: 20px 0;
+      }
+      .photo {
+        width: 100px;
+        height: 120px;
+        border: 1px solid #ccc;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+      }
+      th,
+      td {
+        border: 1px solid #000;
+        padding: 8px;
+        text-align: left;
+      }
+      .summary {
+        margin-top: 30px;
+      }
+      .footer {
+        margin-top: 50px;
+        display: flex;
+        justify-content: space-between;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div>
+        <img src="{{ school_logo_url }}" alt="School Logo" width="80" />
+      </div>
+      <div>
+        <h1>Kristobell Schools</h1>
+        <p>Address line here</p>
+      </div>
+      <div>
+        <p><strong>Term:</strong> {{ term }}</p>
+        <p><strong>Academic Year:</strong> {{ academic_year }}</p>
+      </div>
+    </div>
+
+    <div class="student-info">
+      <div>
+        <img src="{{ student_photo_url }}" alt="Student Photo" class="photo" />
+      </div>
+      <div>
+        <p><strong>Name:</strong> {{ student_name }}</p>
+        <p><strong>School ID:</strong> {{ school_id }}</p>
+        <p><strong>Class:</strong> {{ class_name }}</p>
+        <p><strong>Date of Birth:</strong> {{ date_of_birth }}</p>
+        <p><strong>Gender:</strong> {{ gender }}</p>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Subject</th>
+          <th>CA</th>
+          <th>Exam</th>
+          <th>Total</th>
+          <th>Grade</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for result in results %}
+        <tr>
+          <td>{{ result.subject_name }}</td>
+          <td>{{ result.ca_score or result.first_ca + result.second_ca }}</td>
+          <td>{{ result.exam_score }}</td>
+          <td>{{ result.total_score }}</td>
+          <td>{{ result.grade }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div class="summary">
+      <p><strong>Total Average:</strong> {{ total_average }}</p>
+      <p><strong>Position in Class:</strong> {{ position }}</p>
+      <p><strong>Remark:</strong> {{ remark }}</p>
+      {% if promoted_to %}
+      <p><strong>Promoted to:</strong> {{ promoted_to }}</p>
+      {% endif %}
+    </div>
+
+    <div class="footer">
+      <div>
+        <p>_____________________</p>
+        <p>Teacher's Signature</p>
+      </div>
+      <div>
+        <p>Date: {{ current_date }}</p>
+      </div>
+      <div>
+        <p>School Stamp</p>
+      </div>
+    </div>
+  </body>
+</html>
